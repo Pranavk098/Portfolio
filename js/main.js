@@ -161,22 +161,29 @@ const revObs = new IntersectionObserver(entries => {
 }, { threshold: 0.08 });
 reveals.forEach(el => revObs.observe(el));
 
-/* ── SKILL CARDS — subtle entry animation ───────────────────── */
-document.querySelectorAll('.tc').forEach((el, i) => {
-  el.style.opacity = '0';
-  el.style.transform = 'translateX(-8px)';
-  el.style.transition = `opacity .5s ${i * 0.04}s ease, transform .5s ${i * 0.04}s ease`;
-});
-const tcObs = new IntersectionObserver(entries => {
-  entries.forEach(e => {
-    if (e.isIntersecting) {
-      e.target.style.opacity = '1';
-      e.target.style.transform = 'translateX(0)';
-      tcObs.unobserve(e.target);
-    }
+/* ── SKILL CARD STAGGER CASCADE (grid-order, per-group) ─────── */
+(function() {
+  document.querySelectorAll('.skill-group').forEach((group, gi) => {
+    group.querySelectorAll('.tc').forEach((card, ci) => {
+      const delay = gi * 0.09 + ci * 0.048;
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(14px)';
+      card.style.transition =
+        `opacity .48s ${delay}s ease,
+         transform .48s ${delay}s cubic-bezier(.16,1,.3,1)`;
+    });
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        group.querySelectorAll('.tc').forEach(card => {
+          card.style.opacity = '1';
+          card.style.transform = 'translateY(0)';
+        });
+        obs.disconnect();
+      }
+    }, { threshold: 0.08 });
+    obs.observe(group);
   });
-}, { threshold: 0.1 });
-document.querySelectorAll('.tc').forEach(el => tcObs.observe(el));
+})();
 
 /* ── RADAR SCANNER ──────────────────────────────────────────── */
 (function() {
@@ -518,6 +525,32 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
   const car = { x: 155, y: 40, vx: 1.6, vy: 0, angle: 0 };
   const trail = [];
   const TRAIL_MAX = 35;
+  const gameSparks   = [];   // wall-contact sparks
+  const exhaustParts = [];   // exhaust/smoke particles
+
+  // ── Pre-computed tarmac repair patches (track texture) ──────
+  const TRACK_PATCHES = Array.from({length: 20}, () => {
+    const idx = Math.floor(Math.random() * NS);
+    const s = SAMPLES[idx];
+    return {
+      x: s[0] + (Math.random()-0.5) * TRACK_W * 0.55,
+      y: s[1] + (Math.random()-0.5) * TRACK_W * 0.55,
+      w: 5 + Math.random() * 10,
+      h: 3 + Math.random() * 6,
+      a: Math.random() * Math.PI,
+      dark: Math.random() < 0.55,
+    };
+  });
+
+  // ── Corner number signs ──────────────────────────────────────
+  const CORNER_SIGNS = [
+    { x: 420, y: 50,  n: '1' },
+    { x: 410, y: 120, n: '3' },
+    { x: 348, y: 156, n: '4' },
+    { x: 422, y: 252, n: '6' },
+    { x: 34,  y: 116, n: '8' },
+    { x: 38,  y: 60,  n: '9' },
+  ];
 
   // ── Cursor tracking ──────────────────────────────────────────
   let prevMx = null, prevMy = null, mdx = 0, mdy = 0, hovering = false;
@@ -562,30 +595,72 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
   }
 
   function drawKerbs() {
-    // Red/white kerb strips at notable corners (painted over track borders)
     const kerbs = [
-      { x:400, y:64,  a: Math.PI*0.35, l:22 },  // T1
+      { x:400, y:64,  a: Math.PI*0.35, l:20 },  // T1
       { x:376, y:126, a:-Math.PI*0.1,  l:16 },  // chicane left
       { x:354, y:118, a: Math.PI*0.1,  l:16 },  // chicane right
       { x:334, y:162, a: Math.PI*0.4,  l:18 },  // T4
       { x:395, y:260, a: Math.PI*0.55, l:22 },  // Loews hairpin apex
       { x:338, y:268, a: 0,            l:18 },  // Loews exit
+      { x:300, y:264, a: 0,            l:14 },  // pool entry
       { x:60,  y:120, a:-Math.PI*0.2,  l:16 },  // Portier
       { x:62,  y:68,  a: Math.PI*0.15, l:16 },  // Anthony Noghes
     ];
     kerbs.forEach(k => {
-      const segs = 6;
+      const segs = 7;
+      const segW = k.l / segs;
       for (let i = 0; i < segs; i++) {
         gx.save();
         gx.translate(k.x, k.y);
         gx.rotate(k.a);
-        gx.fillStyle = i % 2 === 0 ? '#FF1801' : '#f0f0f0';
-        gx.fillRect(-k.l/2 + i*(k.l/segs), -(HALF_W+1), k.l/segs, 5);
-        gx.fillStyle = i % 2 === 0 ? '#f0f0f0' : '#FF1801';
-        gx.fillRect(-k.l/2 + i*(k.l/segs),  (HALF_W-4), k.l/segs, 5);
+        const ox = -k.l/2 + i * segW;
+        const col1 = i % 2 === 0 ? '#FF1801' : '#f2f2f2';
+        const col2 = i % 2 === 0 ? '#f2f2f2' : '#FF1801';
+
+        // Drop shadow for depth
+        gx.fillStyle = 'rgba(0,0,0,0.35)';
+        gx.fillRect(ox + 1, -(HALF_W+1) + 4, segW, 2);
+        gx.fillRect(ox + 1,  (HALF_W-2) + 4, segW, 2);
+
+        // Outer kerb — 4px tall
+        gx.fillStyle = col1;
+        gx.fillRect(ox, -(HALF_W+1), segW, 4);
+        // Inner kerb — 4px tall
+        gx.fillStyle = col2;
+        gx.fillRect(ox,  (HALF_W-3), segW, 4);
+
+        // Thin highlight stripe on top
+        gx.fillStyle = 'rgba(255,255,255,0.25)';
+        gx.fillRect(ox, -(HALF_W+1), segW, 1);
+        gx.fillRect(ox,  (HALF_W-3), segW, 1);
+
         gx.restore();
       }
     });
+  }
+
+  function drawCornerSigns() {
+    gx.save();
+    CORNER_SIGNS.forEach(s => {
+      const w = 16, h = 14;
+      // Drop shadow
+      gx.fillStyle = 'rgba(0,0,0,0.5)';
+      gx.fillRect(s.x - w/2 + 1, s.y - h/2 + 1, w, h);
+      // Red board
+      gx.fillStyle = '#CC1100';
+      gx.fillRect(s.x - w/2, s.y - h/2, w, h);
+      // White inner border
+      gx.strokeStyle = 'rgba(255,255,255,.8)';
+      gx.lineWidth = 0.8;
+      gx.strokeRect(s.x - w/2 + 1.5, s.y - h/2 + 1.5, w - 3, h - 3);
+      // Corner number
+      gx.fillStyle = '#fff';
+      gx.font = "bold 8px 'DM Mono',monospace";
+      gx.textAlign = 'center';
+      gx.textBaseline = 'middle';
+      gx.fillText(s.n, s.x, s.y);
+    });
+    gx.restore();
   }
 
   function drawSF() {
@@ -653,6 +728,16 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
     gx.stroke();
     gx.setLineDash([]);
 
+    // Tarmac repair patches (surface texture)
+    TRACK_PATCHES.forEach(p => {
+      gx.save();
+      gx.translate(p.x, p.y);
+      gx.rotate(p.a);
+      gx.fillStyle = p.dark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.04)';
+      gx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      gx.restore();
+    });
+
     // Corner kerbs
     drawKerbs();
 
@@ -672,6 +757,18 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
     gx.save();
     gx.translate(cx, cy);
     gx.rotate(angle);
+
+    // Ground shadow
+    gx.save();
+    gx.globalAlpha = 0.35;
+    const shadowGrad = gx.createRadialGradient(2*S, 1*S, 0, 2*S, 1*S, 9*S);
+    shadowGrad.addColorStop(0, 'rgba(0,0,0,0.7)');
+    shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    gx.fillStyle = shadowGrad;
+    gx.beginPath();
+    gx.ellipse(2*S, 1.5*S, 9*S, 3.5*S, 0, 0, Math.PI*2);
+    gx.fill();
+    gx.restore();
 
     if (spd > 1) { gx.shadowColor = '#FF1801'; gx.shadowBlur = Math.min(spd * 3, 16); }
 
@@ -719,6 +816,88 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
     gx.font = `bold ${Math.round(S*2.2)}px monospace`;
     gx.textAlign = 'center'; gx.textBaseline = 'middle';
     gx.fillText('1', 1.5*S, 0.5*S);
+    gx.restore();
+  }
+
+  // ── Exhaust smoke ────────────────────────────────────────────
+  function emitExhaust(spd) {
+    if (spd < 1.2) return;
+    const ang = car.angle + Math.PI + (Math.random()-0.5)*0.4;
+    exhaustParts.push({
+      x: car.x - Math.cos(car.angle)*13,
+      y: car.y - Math.sin(car.angle)*13,
+      vx: Math.cos(ang) * (0.3 + Math.random()*spd*0.12),
+      vy: Math.sin(ang) * (0.3 + Math.random()*spd*0.12),
+      r: 1.5 + Math.random()*2,
+      life: 1,
+      decay: 0.025 + Math.random()*0.02,
+    });
+    if (exhaustParts.length > 60) exhaustParts.shift();
+  }
+
+  function drawExhaust() {
+    exhaustParts.forEach((p, i) => {
+      p.x += p.vx; p.y += p.vy;
+      p.r  += 0.15;
+      p.life -= p.decay;
+      if (p.life <= 0) { exhaustParts.splice(i, 1); return; }
+      gx.beginPath();
+      gx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      gx.fillStyle = `rgba(200,160,80,${p.life * 0.45})`;
+      gx.fill();
+    });
+  }
+
+  // ── Wall sparks ───────────────────────────────────────────────
+  function emitSparks(nx, ny, spd) {
+    const count = Math.floor(spd * 1.5 + 3);
+    for (let i = 0; i < count; i++) {
+      const ang = Math.atan2(-ny, -nx) + (Math.random()-0.5)*1.8;
+      gameSparks.push({
+        x: car.x, y: car.y,
+        vx: Math.cos(ang) * (1 + Math.random()*spd*0.5),
+        vy: Math.sin(ang) * (1 + Math.random()*spd*0.5),
+        life: 0.9 + Math.random()*0.3,
+        decay: 0.07 + Math.random()*0.06,
+      });
+    }
+    if (gameSparks.length > 80) gameSparks.splice(0, gameSparks.length - 80);
+  }
+
+  function drawSparks() {
+    gameSparks.forEach((p, i) => {
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.88; p.vy *= 0.88;
+      p.life -= p.decay;
+      if (p.life <= 0) { gameSparks.splice(i, 1); return; }
+      gx.beginPath();
+      gx.moveTo(p.x, p.y);
+      gx.lineTo(p.x - p.vx*3, p.y - p.vy*3);
+      const hot = p.life > 0.5 ? '#FFD700' : '#FF6600';
+      gx.strokeStyle = `rgba(${p.life>0.5?'255,215,0':'255,102,0'},${p.life})`;
+      gx.lineWidth = 1;
+      gx.stroke();
+    });
+  }
+
+  // ── Heat shimmer ─────────────────────────────────────────────
+  let shimmerT = 0;
+  function drawHeatShimmer(spd) {
+    if (spd < 5) return;
+    shimmerT += 0.15;
+    const intensity = Math.min((spd - 5) / 10, 1);
+    const behindX = car.x - Math.cos(car.angle) * 18;
+    const behindY = car.y - Math.sin(car.angle) * 18;
+    const rw = 18, rh = 10;
+    gx.save();
+    gx.translate(behindX, behindY);
+    gx.rotate(car.angle);
+    for (let row = -rh; row < rh; row += 2) {
+      const wave = Math.sin(shimmerT + row * 0.5) * intensity * 1.8;
+      const alpha = 0.04 * intensity * (1 - Math.abs(row)/rh);
+      gx.fillStyle = `rgba(255,200,80,${alpha})`;
+      gx.fillRect(-rw + wave, row, rw*2, 2);
+    }
     gx.restore();
   }
 
@@ -786,6 +965,7 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
         car.vx -= 2 * dot * nx * 0.45;
         car.vy -= 2 * dot * ny * 0.45;
         car.vx *= 0.72; car.vy *= 0.72;
+        if (spd > 1.5) emitSparks(nx, ny, spd);
       }
     }
 
@@ -803,14 +983,193 @@ document.querySelectorAll('.mob-link').forEach(a => a.addEventListener('click', 
     // Lap check
     checkLap();
 
+    // Exhaust emit
+    emitExhaust(spd);
+
     // Render
     drawTrack();
     drawTrail();
+    drawHeatShimmer(spd);
+    drawExhaust();
+    drawSparks();
     drawCar(car.x, car.y, car.angle, spd);
 
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
+})();
+
+/* ── NAV: hide gap when ticker scrolls out of view ───────────── */
+(function() {
+  const nav    = document.querySelector('nav');
+  const ticker = document.querySelector('.ticker');
+  if (!nav || !ticker) return;
+  function checkTicker() {
+    const gone = window.scrollY >= ticker.offsetHeight;
+    nav.classList.toggle('ticker-gone', gone);
+  }
+  window.addEventListener('scroll', checkTicker, { passive: true });
+  checkTicker();
+})();
+
+/* ══ VISUAL IMPROVEMENTS ════════════════════════════════════════ */
+
+/* ── 1. SMOOTHY-STYLE SMOOTH SCROLL ─────────────────────────── */
+(function() {
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+  }
+  function smoothScrollTo(targetY, duration) {
+    const startY = window.scrollY;
+    const dist   = targetY - 80 - startY;
+    const start  = performance.now();
+    function step(now) {
+      const p = Math.min((now - start) / duration, 1);
+      window.scrollTo(0, startY + dist * easeInOutCubic(p));
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (!target) return;
+      e.preventDefault();
+      const dist = Math.abs(target.offsetTop - window.scrollY);
+      smoothScrollTo(target.offsetTop, Math.max(420, Math.min(dist * 0.55, 1100)));
+    });
+  });
+})();
+
+/* ── 2. TEXT SCRAMBLE — HERO NAME ───────────────────────────── */
+(function() {
+  const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ01█▓▒░';
+  function scramble(el, finalText, delay, duration) {
+    const len = finalText.length;
+    let frame = 0;
+    const total = Math.ceil(duration / 16);
+    setTimeout(() => {
+      function tick() {
+        let out = '';
+        for (let i = 0; i < len; i++) {
+          if (finalText[i] === ' ') { out += ' '; continue; }
+          const settleFrame = Math.floor((i / len) * total * 0.72);
+          if (frame >= settleFrame) {
+            out += finalText[i];
+          } else {
+            out += `<span style="color:var(--red);opacity:.55">${CHARS[Math.floor(Math.random()*CHARS.length)]}</span>`;
+          }
+        }
+        el.innerHTML = out;
+        frame++;
+        if (frame < total) requestAnimationFrame(tick);
+        else el.textContent = finalText;
+      }
+      tick();
+    }, delay);
+  }
+  const l1 = document.querySelector('.hero-name .line1');
+  const l2 = document.querySelector('.hero-name .line2');
+  if (l1) scramble(l1, 'PRANAV', 180, 850);
+  if (l2) scramble(l2, 'KODURU', 480, 1000);
+})();
+
+/* ── 3. 3D CARD TILT ─────────────────────────────────────────── */
+(function() {
+  document.querySelectorAll('.proj-card').forEach(card => {
+    card.addEventListener('mousemove', e => {
+      const r  = card.getBoundingClientRect();
+      const cx = r.left + r.width/2, cy = r.top + r.height/2;
+      const dx = (e.clientX - cx) / (r.width/2);
+      const dy = (e.clientY - cy) / (r.height/2);
+      card.style.transition = 'box-shadow .3s,border-color .3s';
+      card.style.transform  =
+        `perspective(800px) rotateX(${-dy*2.5}deg) rotateY(${dx*3.5}deg) translateY(-4px) scale(1.01)`;
+    });
+    card.addEventListener('mouseleave', () => {
+      card.style.transition = 'transform .6s cubic-bezier(.23,1,.32,1),box-shadow .3s,border-color .3s';
+      card.style.transform  = 'perspective(800px) rotateX(0) rotateY(0) translateY(0) scale(1)';
+    });
+  });
+})();
+
+/* ── 4. MAGNETIC BUTTONS ─────────────────────────────────────── */
+(function() {
+  const STRENGTH = { '.btn': [9, 5], '.c-link': [6, 3] };
+  Object.entries(STRENGTH).forEach(([sel, [sx, sy]]) => {
+    document.querySelectorAll(sel).forEach(btn => {
+      btn.addEventListener('mousemove', e => {
+        const r  = btn.getBoundingClientRect();
+        const dx = (e.clientX - r.left - r.width/2)  / (r.width/2);
+        const dy = (e.clientY - r.top  - r.height/2) / (r.height/2);
+        btn.style.transition = 'transform .15s ease';
+        btn.style.transform  = `translate(${dx*sx}px,${dy*sy}px)`;
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.transition = 'transform .55s cubic-bezier(.23,1,.32,1)';
+        btn.style.transform  = 'translate(0,0)';
+      });
+    });
+  });
+})();
+
+/* ── 5. WORD-STAGGERED SECTION HEADINGS ─────────────────────── */
+(function() {
+  document.querySelectorAll('.sec-title').forEach(el => {
+    // Skip if it contains child elements (already processed or has HTML)
+    if (el.querySelector('span')) return;
+    const words = el.textContent.trim().split(/\s+/);
+    el.innerHTML = words.map((w, i) =>
+      `<span class="sw" style="transition-delay:${i*0.11}s">` +
+      `<span class="sw-inner">${w}</span></span>\u00A0`
+    ).join('');
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { el.classList.add('words-in'); obs.disconnect(); }
+    }, { threshold: 0.25 });
+    obs.observe(el);
+  });
+})();
+
+/* ── 6. HERO SECTOR PARALLAX DEPTH ──────────────────────────── */
+(function() {
+  const sectors = document.querySelectorAll('.sector');
+  if (!sectors.length) return;
+  const rates = [0.09, 0.055, 0.02]; // S1 front, S3 back
+  function onScroll() {
+    const sy = window.scrollY;
+    sectors.forEach((s, i) => {
+      s.style.transform = `translateY(${sy * rates[i % rates.length]}px)`;
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+})();
+
+/* ── 7. TIMELINE SCROLL-FILL ─────────────────────────────────── */
+(function() {
+  const tl = document.querySelector('.timeline');
+  if (!tl) return;
+  const fill = document.createElement('div');
+  fill.id = 'tl-fill';
+  tl.style.position = 'relative';
+  tl.appendChild(fill);
+  function onScroll() {
+    const r   = tl.getBoundingClientRect();
+    const vh  = window.innerHeight;
+    const pct = Math.max(0, Math.min(1, (vh - r.top) / (r.height + vh * 0.4)));
+    fill.style.height = (pct * 100) + '%';
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+
+/* ── 8. NOISE TEXTURE ON CARDS ───────────────────────────────── */
+(function() {
+  document.querySelectorAll('.proj-card,.skill-group,.tl-item').forEach(card => {
+    const n = document.createElement('div');
+    n.className = 'noise-overlay';
+    n.setAttribute('aria-hidden', 'true');
+    card.appendChild(n);
+  });
 })();
 
 /* ── LIGHT / DARK MODE TOGGLE ───────────────────────────────── */

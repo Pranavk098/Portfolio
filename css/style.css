@@ -20,7 +20,7 @@
 
 /* ─── RESET ──────────────────────────────────────────────────── */
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
-html{scroll-behavior:smooth;}
+/* smooth scroll handled by JS (Smoothy-style easing) */
 body{
   background:#04040e;
   color:var(--text);
@@ -65,7 +65,9 @@ nav{
   background:rgba(4,4,14,.85);
   backdrop-filter:blur(16px);
   border-bottom:1px solid rgba(255,24,1,.15);
+  transition:top .25s ease;
 }
+nav.ticker-gone{top:0;}
 .nav-logo{
   font-family:var(--f-display);
   font-size:15px;font-weight:700;
@@ -278,10 +280,8 @@ nav{
   color:var(--muted);margin-bottom:22px;
 }
 .about-body p strong{color:var(--text);}
-.about-body p:first-child::first-letter{
-  font-family:var(--f-display);font-size:2.2em;
-  font-weight:900;color:var(--red);
-  float:left;margin-right:8px;line-height:.8;margin-top:4px;
+.about-body p:first-child strong:first-child{
+  color:var(--red);
 }
 
 .interests{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px;}
@@ -368,7 +368,9 @@ nav{
   border:1px solid rgba(255,24,1,.15);
   padding:30px;position:relative;
   overflow:hidden;
-  transition:transform .3s,border-color .3s,box-shadow .3s;
+  transition:border-color .3s,box-shadow .3s;
+  transform-style:preserve-3d;
+  will-change:transform;
 }
 .proj-card::before{
   content:'';position:absolute;
@@ -381,7 +383,8 @@ nav{
   opacity:.04;line-height:1;pointer-events:none;
   color:#fff;
 }
-.proj-card:hover{transform:translateY(-5px);box-shadow:0 12px 40px rgba(0,0,0,.4);}
+/* 3D tilt handled by JS — hover just brightens border/shadow */
+.proj-card:hover{box-shadow:0 12px 40px rgba(0,0,0,.4);}
 
 /* Card color variants */
 .proj-card.c-red{border-color:rgba(255,24,1,.18);}
@@ -558,6 +561,12 @@ footer{
   .proj-card{padding:20px 18px;}
   .ticker-track span{padding:0 30px;}
   .nav-logo{font-size:13px;}
+}
+
+/* Ticker mobile size */
+@media(max-width:768px){
+  .ticker{font-size:9px;padding:4px 0;letter-spacing:.1em;}
+  nav{top:22px;}
 }
 
 /* Large screens (≥ 1400px) */
@@ -834,6 +843,69 @@ html.light .tl-item::after{color:rgba(0,0,0,.05);}
 /* fix: inline section divider borders — white lines invisible on light bg */
 html.light #experience{border-top-color:rgba(0,0,0,.06)!important;border-bottom-color:rgba(0,0,0,.06)!important;}
 html.light #skills{border-top-color:rgba(0,0,0,.06)!important;border-bottom-color:rgba(0,0,0,.06)!important;}
+
+/* ─── VISUAL IMPROVEMENTS ────────────────────────────────────── */
+
+/* 3D perspective on project grid */
+.proj-grid{perspective:1100px;}
+
+/* Magnetic CTA buttons */
+.btn,.c-link{
+  will-change:transform;
+  transition:all .25s cubic-bezier(.23,1,.32,1);
+}
+
+/* Section title word-stagger */
+.sw{
+  display:inline-block;
+  overflow:hidden;
+  vertical-align:bottom;
+  line-height:1.1;
+  margin-right:.22em;
+}
+.sw-inner{
+  display:inline-block;
+  transform:translateY(108%) skewY(5deg);
+  opacity:0;
+  transition:transform .7s cubic-bezier(.16,1,.3,1),
+             opacity   .5s ease;
+}
+.sec-title.words-in .sw-inner{
+  transform:translateY(0) skewY(0deg);
+  opacity:1;
+}
+
+/* Timeline scroll-driven fill bar */
+#tl-fill{
+  position:absolute;
+  left:0;top:0;width:1px;
+  height:0%;
+  background:linear-gradient(to bottom,var(--red),var(--gold));
+  box-shadow:0 0 10px rgba(255,24,1,.55);
+  z-index:2;
+  pointer-events:none;
+}
+
+/* Scramble — red flash on settling chars */
+.sc-char{
+  display:inline;
+  transition:color .1s;
+}
+
+/* Hero sector parallax — ensure no layout shift */
+.sector{will-change:transform;}
+
+/* Noise texture overlay on cards */
+.noise-overlay{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+  opacity:.028;
+  mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px 200px;
+}
 
 /* fix: contact resume link hardcoded green border */
 html.light .c-link[style*="green"]{border-color:rgba(26,122,0,.35)!important;}
